@@ -8,4 +8,5 @@ const server = Bun.serve({
   },
 });
 
+console.log(`${figlet.textSync("Bun!")}`);
 console.log(`Listening on http://localhost:${server.port} ...`);
