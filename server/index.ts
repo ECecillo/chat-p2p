@@ -26,18 +26,33 @@ const server = http.createServer(app);
 export const io = new Server(server, { cors: { origin: '*' } });
 
 io.on('connection', (socket) => {
-  console.log('Un utilisateur  vient de se connecter au serveur ', socket.id);
+  console.log('Un utilisateur vient de se connecter au serveur ', socket.id);
 
-  io.emit('newUser', { peerId: socket.id, signal: '' });
-  io.on('offer', ({ peerSession, fromPeerId, toPeerId }) => {
-    console.log('Pending Session Description to transmit:', peerSession);
-    // Send the offer to the peer.
-    io.to(toPeerId).emit('offer', { peerSession, fromPeerId, toPeerId });
+  socket.on('joinRoom', (roomId) => {
+    socket.join(roomId);
+    console.log(`🥷 User ${socket.id} joined room ${roomId}`);
   });
-  io.on('answer', (peerSession, fromPeerId, toPeerId) => {
-    console.log('Pending Session Description to transmit:', peerSession);
+
+  io.on('offer', (offer, roomId) => {
+    // console.log('Pending Session Description to transmit:', peerSession);
+    console.log('Offer Event');
+
+    // Send the offer to the peer.
+    // io.emit('offer', { peerSession, fromPeerId, toPeerId });
+    socket.to(roomId).emit('offer', offer);
+  });
+
+  io.on('answer', (answer, roomId) => {
+    // console.log('Pending Session Description to transmit:', peerSession);
+    console.log('Answer Event');
+
     // Send the answer back to the peer.
-    io.to(toPeerId).emit('answer', peerSession, fromPeerId, toPeerId);
+    // io.to(toPeerId).emit('answer', peerSession, fromPeerId, toPeerId);
+    socket.to(roomId).emit('answer', answer);
+  });
+
+  socket.on('iceCandidate', (candidate, roomId) => {
+    socket.to(roomId).emit('ice candidate', candidate);
   });
 });
 

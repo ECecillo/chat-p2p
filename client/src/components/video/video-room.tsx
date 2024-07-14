@@ -6,18 +6,22 @@ function VideoRoom() {
   const localVideo = useRef<HTMLVideoElement | null>(null);
   const remoteVideo = useRef<HTMLVideoElement | null>(null);
 
+  const [roomId, setRoomId] = useState<string>('1');
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [localStreamDescription, setLocalStreamDescription] = useState<RTCSessionDescriptionInit | null>(
     null,
   );
-  const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | null>(null);
+  const [peerConnection, setPeerConnection] = useState<RTCPeerConnection>(
+    new RTCPeerConnection(configuration),
+  );
 
   useEffect(() => {
     navigator.mediaDevices
       .getUserMedia({ video: true, audio: true })
-      .then((stream: MediaStream) => {
+      .then((localStream: MediaStream) => {
         if (localVideo.current) {
-          setLocalStream(stream);
+          localVideo.current!.srcObject = localStream;
+          setLocalStream(localStream);
         }
       })
       .catch((error) => {
@@ -25,10 +29,11 @@ function VideoRoom() {
       });
   }, []);
 
-  socket.on('newUser', ({ peerId, signal }: { peerId: string; signal: string }) => {
-    const peerConnection = new RTCPeerConnection(configuration);
-    console.log('Create a peer instance because a new user is now discoverable');
+  useEffect(() => {
+    socket.emit('joinRoom', roomId);
+  }, [roomId]);
 
+  useEffect(() => {
     if (localStream) {
       // For each track that our webcam record, transmit to our peer instance
       // Will then be send to the second or more users.
@@ -52,52 +57,17 @@ function VideoRoom() {
       }
     };
 
-    // define our session description that hold metadata about our stream (ip, codec ...).
-    peerConnection
-      .createOffer()
-      .then((sessionDescription) => {
-        peerConnection.setLocalDescription(sessionDescription);
-        setLocalStreamDescription(sessionDescription);
+    socket.on('offer', async (offer) => {
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
 
-        const myPeerId = socket.id;
-        console.log('Send Session Description offer to peer', sessionDescription, myPeerId, peerId);
-        socket.emit('offer', { peerSession: sessionDescription, fromPeerId: myPeerId, toPeerId: peerId });
-      })
-      .catch((error) => {
-        console.error('Error creating session description', error);
-      });
+      socket.emit('answer', answer, roomId);
+    });
 
-    socket.on(
-      'offer',
-      ({
-        remoteDescriptionOffer,
-        fromPeerId,
-        myPeerId,
-      }: {
-        remoteDescriptionOffer: RTCSessionDescriptionInit;
-        fromPeerId: string;
-        myPeerId: string;
-      }) => {
-        console.log('Looks like I am receiving an offer from a peer:', fromPeerId);
-        const remoteDescription = new RTCSessionDescription(remoteDescriptionOffer);
-
-        peerConnection.setRemoteDescription(remoteDescription).then(async () => {
-          const answer = await peerConnection.createAnswer();
-          peerConnection.setLocalDescription(answer);
-
-          const toPeerId = fromPeerId;
-          socket.emit('answer', localStreamDescription, myPeerId, toPeerId);
-        });
-      },
-    );
-
-    socket.on(
-      'answer',
-      (incomingRemotePeerSesssion: RTCSessionDescriptionInit, fromPeerId: string, toPeerId: string) => {
-        console.log('Looks like I am receiving an answer from a peer:', fromPeerId);
-        peerConnection.setRemoteDescription(incomingRemotePeerSesssion);
-      },
-    );
+    socket.on('answer', async (answer) => {
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    });
 
     // Si un des peers nous envoie cette info, alors on doit faire en sorte que
     // Notre instance peerConnections ajoute ce nouveau ICE pour nous.
@@ -108,7 +78,7 @@ function VideoRoom() {
         console.error('Error adding received ice candidate', error);
       }
     });
-  });
+  }, [roomId]);
 
   return (
     <div>
